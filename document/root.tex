@@ -1,0 +1,80 @@
+\documentclass[11pt]{article}
+\usepackage[T1]{fontenc}
+\usepackage{isabelle,isabellesym}
+\usepackage[a4paper,portrait,margin=1in]{geometry}
+
+% further packages required for unusual symbols (see also
+% isabellesym.sty), use only when needed
+
+\usepackage{amsmath}
+\usepackage{amssymb}
+  %for \<leadsto>, \<box>, \<diamond>, \<sqsupset>, \<mho>, \<Join>,
+  %\<lhd>, \<lesssim>, \<greatersim>, \<lessapprox>, \<greaterapprox>,
+  %\<triangleq>, \<yen>, \<lozenge>
+
+%\usepackage{eurosym}
+  %for \<euro>
+
+%\usepackage[only,bigsqcap]{stmaryrd}
+  %for \<Sqinter>
+
+%\usepackage{eufrak}
+  %for \<AA> ... \<ZZ>, \<aa> ... \<zz> (also included in amssymb)
+
+%\usepackage{textcomp}
+  %for \<onequarter>, \<onehalf>, \<threequarters>, \<degree>, \<cent>,
+  %\<currency>
+
+\usepackage{outlines}
+\usepackage{latexsym}
+% this should be the last package used
+\usepackage{pdfsetup}
+
+% urls in roman style, theory text in math-similar italics
+\urlstyle{rm}
+\isabellestyle{it}
+
+% for uniform font size
+%\renewcommand{\isastyle}{\isastyleminor}
+
+
+\begin{document}
+
+\title{A framework for designing and verifying Byzantine fault tolerant Conflict-free Replicated Data Types}
+\author{Liangrun Da, Martin Kleppmann}
+\maketitle
+
+\begin{abstract}
+Conflict-Free Replicated Data Types (CRDTs) are designed to ensure consistency of replicated data in peer-to-peer settings. However, their consistency guarantees are compromised in the presence of untrusted nodes that may deviate from the protocol, a common scenario in real-world peer-to-peer systems. This thesis addresses the critical issue of maintaining CRDT consistency in Byzantine environments. We propose a generic framework that can be used to retrofit Byzantine Fault Tolerance (BFT) to existing CRDTs with minimal modifications. Our framework employs mechanized proofs using the Isabelle/HOL proof assistant with minimal assumptions, only requiring the existence of a collision-resistant cryptographic hash function. The framework provides a verification basis that allows for verification of the resulting BFT CRDTs under a wide range of potential attack scenarios. We demonstrate the practicality of our approach by successfully designing and verifying Byzantine Fault-Tolerant versions of Observed-Remove Set (ORSet) and Replicated Growable Array (RGA), two widely-used CRDTs.
+\end{abstract}
+
+\tableofcontents
+
+% sane default for proof documents
+\parindent 0pt\parskip 0.5ex
+
+\section {Introduction}
+\emph{Conflict-free Replicated Data Types (CRDTs)} have long been considered a promising solution for achieving \emph{strong eventual consistency (SEC)} in peer-to-peer systems~\cite{shapiro2011conflict}. While \emph{Operational Transformation (OT)} can also achieve SEC, it typically requires a central server to resolve conflicts~\cite{nichols1995high, DayRichter:2010tt, Etherpad:2011um, Wang:2015vo}. In contrast, CRDTs can operate in a fully decentralized manner, making them particularly well-suited for peer-to-peer systems. However, this advantage comes with a critical assumption that all the participants in the system are honest and strictly follow the protocol. Unfortunately, this assumption often fails to hold in real-world peer-to-peer environments.
+
+% For most CRDT algorithms, if a malicious node joins the system and starts sending mallicious updates, it can cause the system to diverge permanently.
+
+A key characteristic of most P2P systems is the absence of centralized control, allowing anyone to join or leave the system freely, making it impossible to guarantee that all participants will adhere to the protocol. A peer might deviate from the protocol either unintentionally (due to hardware failures or software bugs) or intentionally (with malicious intent). Regardless of the cause, any peer that fails to follow the protocol is called a \emph{Byzantine-faulty} peer~\cite{lamport2019byzantine}. Malicious peers may send false, malformed, or contradictory messages to other peers, either to gain unfair advantages or simply to disrupt the system's guarantees. A malicious peer might pretend to be a legitimate peer, and it is difficult to detect malicious behaviors in a P2P system. Even if a peer is detected as malicious and excluded from the system, the peer might change its identity and rejoin the system. Moreover, once Byzantine activity has occurred, non-BFT algorithms lack the mechanisms to roll back or undo the effects of malicious updates, potentially leaving the system in a permanently compromised state.
+
+This fundamental conflict between the honesty assumptions of CRDTs and the reality of P2P systems has been a major obstacle to the adoption of CRDTs in P2P systems. Most existing CRDT algorithms are not suited for open P2P systems that anyone can join, limiting their use to small and trusted groups. Previous attempts to apply CRDTs to "massive-scale" editing systems \cite{andre2013supporting, lv2016efficient, weiss2009logoot} and public editing systems \cite{weiss2009logoot, nedelec2016crate, weiss2007wooki} have overlooked the challenges posed by Byzantine peers, as the openness and scale of the systems make them particularly vulnerable to attacks.
+
+Even in controlled environments with a small number of trusted users, a peer might still be compromised, e.g., by malware. This can lead to serious consequences. For example, when a group of users are collaborating on a shared contract document, a malicious attacker could manipulate the system to show different contract contents to different users. The compromised peer could silently carry out such attacks without being detected unless the users explicitly compare their versions of the document, which is a significant overhead if users need to verify the contents of all their shared documents periodically. Even worse, once detected, the malicious updates might be difficult to remove from the document. For example, a non-malicious edit might be positioned relative to text introduced by a malicious update. Removing the malicious update would cause the non-malicious edit to be misplaced or become nonsensical. This intricate web of dependencies makes it challenging to cleanly remove malicious content without potentially corrupting or losing valid contributions to the document.
+
+To make use of CRDTs in open peer-to-peer systems and to mitigate the impact of device compromises, it is essential to implement Byzantine Fault-Tolerant (BFT) CRDTs. These BFT CRDTs maintain the strong eventual consistency guarantees even in the presence of Byzantine-faulty peers. This enables CRDTs to function reliably in open, decentralized environments where not all participants can be trusted to follow the protocol correctly.
+% generated text of all theories
+\input{session}
+
+% optional bibliography
+\bibliographystyle{abbrv}
+\bibliography{root}
+
+\end{document}
+
+%%% Local Variables:
+%%% mode: latex
+%%% TeX-master: t
+%%% End:
