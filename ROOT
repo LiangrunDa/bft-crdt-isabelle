@@ -1,5 +1,5 @@
 session BFT_CRDT = HOL +
-  options [document = pdf, document_output = "./output"]
+  options [timeout = 600]
   sessions
     "HOL-Library"
     "CRDT"
