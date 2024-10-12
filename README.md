@@ -1,4 +1,4 @@
-# A framework for designing and verifying Byzantine fault tolerant CRDTs
+# A Framework for Designing and Verifying Byzantine Fault Tolerant CRDTs
 
 To check the proof, run 
 
