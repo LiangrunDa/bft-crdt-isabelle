@@ -32,6 +32,13 @@ text \<open>
   do not occur.
 \<close>
 
+fun is_struct_valid' :: \<open>('hash, 'val) hash_func \<Rightarrow> ('hash, 'val) hash_graph \<Rightarrow> ('hash, 'val) node \<Rightarrow> bool\<close> where
+  \<open>is_struct_valid' H G (hashes, val) = (
+    (\<forall>h |\<in>| hashes. \<exists>n |\<in>| G. H n = h) \<and>
+    (hashes, val) |\<notin>| G \<and>
+    H (hashes, val) |\<notin>| hashes
+  )\<close>
+
 locale hash_graph =
   fixes H :: \<open>('hash, 'val) hash_func\<close>
   assumes hash_no_collisions : \<open>(\<forall>x y. H x = H y \<longrightarrow> x = y)\<close>
@@ -97,12 +104,8 @@ inductive struct_valid :: \<open>('hash, 'val) hash_graph \<Rightarrow> bool\<cl
                   H (hashes, val) |\<notin>| hashes
                  \<rbrakk> \<Longrightarrow> struct_valid (G |\<union>| {|(hashes, val) |})\<close>
 
-fun is_struct_valid :: \<open>('hash, 'val) hash_graph \<Rightarrow> ('hash, 'val) node \<Rightarrow> bool\<close> where
-  \<open>is_struct_valid G (hashes, val) = (
-    (\<forall>h |\<in>| hashes. \<exists>n |\<in>| G. H n = h) \<and>
-    (hashes, val) |\<notin>| G \<and>
-    H (hashes, val) |\<notin>| hashes
-  )\<close>
+definition is_struct_valid :: \<open>('hash, 'val) hash_graph \<Rightarrow> ('hash, 'val) node \<Rightarrow> bool\<close> where
+  \<open>is_struct_valid = is_struct_valid' H\<close>
 
 inductive_cases struct_valid_indcases: \<open>struct_valid G\<close>
 

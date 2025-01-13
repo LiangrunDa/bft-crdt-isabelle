@@ -39,6 +39,20 @@ text \<open>
 \<close>
 
 type_synonym ('hash, 'val) peer_state = \<open>('hash, 'val) node list \<times> ('hash, 'val) hash_graph\<close>
+type_synonym ('hash, 'val) sem_valid_func = \<open>('hash, 'val) hash_graph \<Rightarrow> ('hash, 'val) node \<Rightarrow> bool\<close>
+type_synonym ('hash, 'val) struct_valid_func = \<open>('hash, 'val) hash_graph \<Rightarrow> ('hash, 'val) node \<Rightarrow> bool\<close>
+
+fun is_valid' :: \<open>('hash, 'val) sem_valid_func \<Rightarrow> ('hash, 'val) struct_valid_func \<Rightarrow> ('hash, 'val) hash_graph \<Rightarrow> ('hash, 'val) node \<Rightarrow> bool\<close> where
+  \<open>is_valid' SemF StrF G x = ((SemF G x) \<and> (StrF G x))\<close>
+
+fun check_and_apply' :: \<open>('hash, 'val) sem_valid_func \<Rightarrow> ('hash, 'val) struct_valid_func \<Rightarrow> ('hash, 'val) peer_state \<Rightarrow> ('hash, 'val) node \<Rightarrow> ('hash, 'val) peer_state\<close> where
+  \<open>check_and_apply' SemF StrF (ah, G) n = 
+    (if (is_valid' SemF StrF) G n then 
+      (ah @ [n], G |\<union>| {|n|})
+    else
+      (ah, G)
+    )
+\<close>
 
 locale peers_with_arbitrary_history = hash_graph H    
   for H :: \<open>('hash, 'val) hash_func\<close> + 
@@ -109,7 +123,11 @@ definition apply_operations :: \<open>('hash, 'val) node list \<Rightarrow> 'sta
   \<open>apply_operations ns \<equiv> hb.apply_operations ns initial_state\<close>
 
 fun is_valid :: \<open>('hash, 'val) hash_graph \<Rightarrow> ('hash, 'val) node \<Rightarrow> bool\<close> where
-  \<open>is_valid G x = ((is_sem_valid G x) \<and> (is_struct_valid G x))\<close>
+  \<open>is_valid G x = is_valid' is_sem_valid is_struct_valid G x\<close>
+
+lemma is_valid_equiv: 
+  \<open>is_valid G x = (is_sem_valid G x \<and> is_struct_valid G x)\<close>
+  by simp
 
 inductive sem_valid :: \<open>('hash, 'val) hash_graph \<Rightarrow> bool\<close> where 
   \<open>sem_valid {||}\<close>
@@ -131,7 +149,7 @@ proof(induction rule: valid_graph.induct)
 next
   case (2 G n)
   then show ?case
-    by (metis is_struct_valid.elims(2) is_valid.elims(2) struct_valid.simps)
+    by (metis is_struct_valid'.elims(2) is_struct_valid_def is_valid_equiv struct_valid.simps)
 qed
 
 lemma valid_graph_implies_sem_valid[intro]: \<open>valid_graph G \<Longrightarrow> sem_valid G\<close>
@@ -269,8 +287,7 @@ lemma check_and_apply_preserve_distinctness:
      and \<open>fset_of_list ah = G\<close>
      and \<open>distinct ah\<close>
    shows \<open>distinct ah'\<close>
-  by (metis Int_insert_right_if0 append.right_neutral assms check_and_apply.simps distinct_append   
-      distinct_singleton fset_of_list.rep_eq is_struct_valid.elims(2) is_valid.elims(2) list.simps(15) prod.sel(1))
+  by (metis Int_insert_right_if0 assms(1) assms(2) assms(3) distinct_append distinct_singleton fset_of_list.rep_eq inf_bot_right is_struct_valid'.elims(2) is_struct_valid_def is_valid_equiv list.set(1) list.simps(15) peers_with_arbitrary_history.check_and_apply.simps peers_with_arbitrary_history_axioms prod.sel(1)) 
 
 lemma apply_history_preserve_distinctness:
   assumes \<open>apply_history (ah, G) ns = (ah', G')\<close>
@@ -313,7 +330,7 @@ lemma valid_history_causality_hold1:
 
 lemma valid_history_causality_hold2:
   \<open>valid_graph G \<Longrightarrow> is_valid G x \<Longrightarrow> \<forall>y \<in> fset G . y \<prec> x \<or> y \<parallel> x\<close>
-  by (metis (no_types, lifting) CollectI is_concurrent_def is_struct_valid.elims(2) is_valid.elims(2) reachable_def reachable_nodes_of_def reachable_of_G_node_in_G subset_eq valid_graph_implies_struct_valid)
+  by (metis (no_types, lifting) ancestor_nodes_of_def ancestor_reachable_nodes_of insert_Diff insert_iff is_concurrent_def is_struct_valid'.elims(2) is_struct_valid_def is_valid_equiv mem_Collect_eq node_reachable_of_itself reachable_of_G_node_in_G subset_iff valid_graph_implies_struct_valid)
 
 lemma check_and_apply_preserve_causal_consistency:
   assumes \<open>valid_graph G\<close>
@@ -454,9 +471,7 @@ using assms proof(induction G rule: valid_graph.induct)
 next
   case (2 G n)
   then show ?case
-    by (metis (mono_tags, lifting) ancestor_reachable_nodes_of finsert_iff fset_simps(2) 
-        funion_finsert_right is_valid.elims(2) node_reachable_of_itself reachable_of_G_node_in_G 
-        assms(3) only_ancestors_relevant' subset_insert_iff sup.coboundedI1 sup_bot.right_neutral sup_fset.rep_eq valid_graph_implies_struct_valid valid_node_ancestors_in_G)
+    by (metis finsert_iff funion_finsert_right insert_absorb is_valid_equiv le_supI1 node_reachable_of_itself only_ancestors_relevant_def peers_with_arbitrary_history.ancestor_reachable_nodes_of peers_with_arbitrary_history.valid_graph_implies_struct_valid peers_with_arbitrary_history_axioms reachable_of_G_node_in_G subset_insert_iff sup_bot.right_neutral sup_fset.rep_eq valid_node_ancestors_in_G)
 qed
 
 lemma struct_valid_implies_ancestor_subset:
@@ -465,7 +480,7 @@ lemma struct_valid_implies_ancestor_subset:
   shows \<open>(ancestor_nodes_of n) \<subseteq> fset G\<close>
 proof -
   have \<open>(\<forall>h |\<in>| fst n. \<exists>n |\<in>| G. H n = h)\<close>
-    by (metis assms(2) fst_conv is_struct_valid.elims(2))
+    by (metis assms(2) is_struct_valid'.simps is_struct_valid_def prod.collapse)
   then have \<open>preds_of_node n \<subseteq> fset G\<close>
     using hash_graph.preds_of_node_def hash_graph_axioms hash_no_collisions by blast
   then have \<open>\<forall>pred \<in>(preds_of_node n). reachable_nodes_of pred \<subseteq> fset G\<close>
@@ -475,8 +490,7 @@ proof -
   then have \<open>reachable_nodes_of_set (preds_of_node n) \<union> {n} = reachable_nodes_of n\<close>
     using reachable_nodes_preds_equiv by auto
   then show ?thesis
-    by (metis Diff_insert_absorb Un_insert_right 1 ancestor_reachable_nodes_of assms(2) 
-        is_struct_valid.elims(2) subset_eq sup_bot.right_neutral)
+    by (metis (no_types, lifting) "1" Diff_subset_conv ancestor_reachable_nodes_of dual_order.eq_iff inf_sup_aci(5) sup_mono)
 qed
 
 lemma sem_valid_consistent:
@@ -577,7 +591,7 @@ next
   have 4: \<open>is_struct_valid (G |\<union>| fset_of_list xs) x\<close>
     by (metis 1 snoc.prems(1) snoc.prems(2) struct_valid_seq_concat struct_valid_seq_def valid_seq.simps(2))
   have \<open>struct_valid ((G |\<union>| fset_of_list xs) |\<union>| {|x|})\<close>
-    by (metis 2 4 is_struct_valid.elims(2) struct_valid.simps)
+    by (metis "2" "4" is_struct_valid'.elims(2) is_struct_valid_def struct_valid.simps)
   then show ?case
     by simp
 qed
@@ -630,8 +644,7 @@ next
     by (metis snoc.prems(1) snoc.prems(3) struct_valid_seq_concat struct_valid_seq_def 
         valid_graph_implies_struct_valid valid_seq.simps(2))
   then show ?case
-    by (metis 1 2 sem_v str_v append.right_neutral fset_of_list_append fset_of_list_simps(2) 
-        funion_finsert_right is_valid.elims(3) snoc.IH sup_bot.right_neutral valid_graph.simps)
+    using "1" "2" sem_v snoc.IH str_v valid_graph.intros(2) by auto
 qed
 
 lemma struct_valid_seq_implies_sem_valid_seq:

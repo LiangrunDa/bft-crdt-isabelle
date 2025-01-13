@@ -33,6 +33,10 @@ datatype ('id, 'hash, 'v) operation =
   Insert \<open>'v\<close> \<open>'id\<close> \<open>('id, 'hash) elem_id option\<close> |
   Delete \<open>('id, 'hash) elem_id\<close>
 
+fun ref_id :: \<open>('id, 'hash, 'v) operation \<Rightarrow> 'id option\<close> where 
+  \<open>ref_id (Insert v i ei) = Some i\<close> |
+  \<open>ref_id (Delete ei) = None\<close>
+
 type_synonym ('id, 'hash, 'v) RGAG = \<open>('hash, ('id, 'hash, 'v) operation) hash_graph\<close>
 type_synonym ('id, 'hash, 'v) RGAN = \<open>('hash, ('id, 'hash, 'v) operation) node\<close>
 type_synonym ('id, 'hash, 'v) RGAH = \<open>('hash, ('id, 'hash, 'v) operation) hash_func\<close>
@@ -49,7 +53,7 @@ fun interpret_op :: \<open>('id::{linorder}, 'hash::{linorder}, 'v) RGAH \<Right
   \<Rightarrow> (('id, 'hash) elem_id, 'v) elt list \<rightharpoonup> (('id, 'hash) elem_id, 'v) elt list\<close> where
   \<open>interpret_op H (hs, (Insert v i ei)) xs =
     (let h = H (hs, (Insert v i ei)) in
-      insert xs ((i, h), v, True) ei
+      insert xs ((i, h), v, False) ei
   )\<close> |
   \<open>interpret_op H (hs, (Delete ei)) xs = delete xs ei\<close>
 
@@ -60,7 +64,8 @@ text \<open>
   \1 For Insert operations:
      \2 The preceding element's ID must exist in the current state.
      \2 The hash node that added the preceding element must be an ancestor of the new node.
-     \2 The new node cannot reference itself as an ID (although this is computationally infeasible, we check for it explicitly).
+     \2 The new no
+de cannot reference itself as an ID (although this is computationally infeasible, we check for it explicitly).
   
   \1 For Delete operations:
      \2 The ID to be deleted must exist in the current state.
@@ -73,19 +78,71 @@ fun is_rga_sem_valid :: \<open>('id, 'hash, 'a) RGAC \<Rightarrow> ('id, 'hash, 
   \<open>is_rga_sem_valid C H G (hs, Insert v i ei) = (
     case ei of 
       None \<Rightarrow> True
-    | Some ii \<Rightarrow> (\<exists>hs' v' i' ei'. 
-        (hs', Insert v' i' ei') \<in> G \<and>
-        C (hs', Insert v' i' ei') (hs, Insert v i ei) \<and> 
-        H (hs', Insert v' i' ei') = snd ii \<and>
-        i' = (fst ii)) \<and> 
+    | Some ii \<Rightarrow> (\<exists>e \<in> G.
+        C e (hs, Insert v i ei) \<and> 
+        H e = snd ii \<and>
+        (ref_id (snd e)) = Some (fst ii)) \<and> 
         H (hs, Insert v i ei) \<noteq> snd ii
   )\<close>
-| \<open>is_rga_sem_valid C H G (hs, Delete ei) = (\<exists>hs' v' i' ei'.
+| \<open>is_rga_sem_valid C H G (hs, Delete ei) = (\<exists>e \<in> G.
+    C e (hs, Delete ei) \<and> 
+    H e = snd ei \<and>
+    (ref_id (snd e)) = Some (fst ei)
+)\<close>
+
+lemma is_rga_sem_valid_insert_1:
+  assumes \<open>is_rga_sem_valid C H G (hs, Insert v i (Some ii))\<close>
+  shows \<open>(\<exists>hs' v' i' ei'. 
+        (hs', Insert v' i' ei') \<in> G \<and>
+        C (hs', Insert v' i' ei') (hs, Insert v i (Some ii)) \<and> 
+        H (hs', Insert v' i' ei') = snd ii \<and>
+        i' = (fst ii)) \<and> 
+        H (hs, Insert v i (Some ii)) \<noteq> snd ii\<close>
+proof -
+  obtain e where e_def: \<open>(e \<in> G \<and>
+        C e (hs, Insert v i (Some ii)) \<and> 
+        H e = snd ii \<and>
+        (ref_id (snd e)) = Some (fst ii)) \<and> 
+        H (hs, Insert v i (Some ii)) \<noteq> snd ii
+    \<close>
+    using assms by force
+  show ?thesis proof (cases "(snd e)")
+    case (Insert x11 x12 x13)
+    then show ?thesis
+      by (metis e_def option.inject prod.collapse ref_id.simps(1))
+  next
+    case (Delete x2)
+    then show ?thesis 
+      using e_def by auto
+  qed
+qed
+
+lemma is_rga_sem_valid_insert_2:
+  assumes \<open>is_rga_sem_valid C H G (hs, Delete ei)\<close>
+  shows \<open>\<exists>hs' v' i' ei'.
     (hs', Insert v' i' ei')  \<in> G \<and>
     C (hs', Insert v' i' ei') (hs, Delete ei) \<and> 
     H (hs', Insert v' i' ei') = snd ei \<and>
     i' = (fst ei)
-)\<close>
+  \<close>
+proof -
+  obtain e where e_def: \<open>e \<in> G \<and>
+    C e (hs, Delete ei) \<and> 
+    H e = snd ei \<and>
+    (ref_id (snd e)) = Some (fst ei)
+  \<close>
+    using assms by auto
+  show ?thesis proof (cases \<open>snd e\<close>)
+    case (Insert x11 x12 x13)
+    then show ?thesis
+      by (metis e_def option.sel prod.collapse ref_id.simps(1))
+  next
+    case (Delete x2)
+    then show ?thesis 
+      using e_def by auto
+  qed
+qed
+
 
 locale bft_rga = peers_with_arbitrary_history H _ interpret_op \<open>[]\<close> is_rga_sem_valid for
     H :: \<open>('id::{linorder}, 'hash::{linorder}, 'v) RGAH\<close>
@@ -95,8 +152,8 @@ notation interp (\<open>\<langle>_\<rangle>\<close> [0] 1000)
 
 subsection \<open>No Failure\<close>
 
-definition indices :: \<open>('id, 'hash, 'v) RGAN list \<Rightarrow> ('id, 'hash) elem_id list\<close> where
-  \<open>indices xs \<equiv>
+definition inserted_ids :: \<open>('id, 'hash, 'v) RGAN list \<Rightarrow> ('id, 'hash) elem_id list\<close> where
+  \<open>inserted_ids xs \<equiv>
      (List.map_filter (\<lambda>x. case x of 
       (_, Insert v i ei) \<Rightarrow> Some (i, H x)
       | _ \<Rightarrow> None))
@@ -106,32 +163,32 @@ definition element_ids :: \<open>(('id \<times> 'hash) \<times> 'v \<times> bool
  \<open>element_ids list \<equiv> set (map fst list)\<close>
 
 lemma indices_Nil [simp]:
-  shows \<open>indices [] = []\<close>
-  by(auto simp: indices_def map_filter_def)
+  shows \<open>inserted_ids [] = []\<close>
+  by(auto simp: inserted_ids_def map_filter_def)
 
 lemma indices_append [simp]:
-  shows \<open>indices (xs@ys) = indices xs @ indices ys\<close>
-  by(auto simp: indices_def map_filter_def)
+  shows \<open>inserted_ids (xs@ys) = inserted_ids xs @ inserted_ids ys\<close>
+  by(auto simp: inserted_ids_def map_filter_def)
 
 lemma indices_Deliver_Insert [simp]:
-  shows \<open>indices [(hs, Insert v i ei)] = [(i, H (hs, Insert v i ei))]\<close>
-  by(auto simp: indices_def map_filter_def)
+  shows \<open>inserted_ids [(hs, Insert v i ei)] = [(i, H (hs, Insert v i ei))]\<close>
+  by(auto simp: inserted_ids_def map_filter_def)
 
 lemma indices_Deliver_Delete [simp]:
-  shows \<open>indices [(hs, Delete i)] = []\<close>
-  by(auto simp: indices_def map_filter_def)
+  shows \<open>inserted_ids [(hs, Delete i)] = []\<close>
+  by(auto simp: inserted_ids_def map_filter_def)
 
 lemma idx_in_elem_inserted [intro]:
   assumes \<open>(hs, Insert v i ei) \<in> set xs\<close>
-  shows   \<open>(i, H (hs, Insert v i ei)) \<in> set (indices xs)\<close>
-  using assms by (induction xs, auto simp add: indices_def map_filter_def)
+  shows   \<open>(i, H (hs, Insert v i ei)) \<in> set (inserted_ids xs)\<close>
+  using assms by (induction xs, auto simp add: inserted_ids_def map_filter_def)
 
 lemma apply_op_idx_elems:
   assumes \<open>check_and_apply (dn, G) n = (dn', G')\<close>
     and \<open>apply_operations dn = Some es\<close>
-    and \<open>element_ids es = set (indices dn)\<close>
+    and \<open>element_ids es = set (inserted_ids dn)\<close>
     and \<open>apply_operations dn' = Some es'\<close>
-  shows \<open>element_ids es' = set (indices dn')\<close>
+  shows \<open>element_ids es' = set (inserted_ids dn')\<close>
 proof (cases \<open>is_valid G n\<close>)
   case True
   have es'_es: \<open>Some es' = interp n es\<close>
@@ -140,12 +197,12 @@ proof (cases \<open>is_valid G n\<close>)
     case (Insert v i ei)
     obtain h where "h = H n"
       by blast
-    then have \<open>Some es' = insert es ((i, h), v, True) ei\<close>
+    then have \<open>Some es' = insert es ((i, h), v, False) ei\<close>
       by (metis Insert es'_es interp.elims interpret_op.simps(1) prod.collapse)
     then have 1: \<open>element_ids es' = element_ids es \<union> {(i, h)}\<close>
       using insert_preserve_indices'
       by (metis element_ids_def fst_conv list.set_map option.sel) 
-    then have \<open>set (indices dn') = set (indices dn) \<union> {(i, h)}\<close>
+    then have \<open>set (inserted_ids dn') = set (inserted_ids dn) \<union> {(i, h)}\<close>
       by (metis (no_types, lifting) Insert True \<open>h = H n\<close> assms(1) bft_rga.indices_append 
           bft_rga_axioms check_and_apply.simps fst_conv indices_Deliver_Insert list.set(1) 
           list.simps(15) prod.collapse set_append)
@@ -157,7 +214,7 @@ proof (cases \<open>is_valid G n\<close>)
       by (metis Delete es'_es interp.elims interpret_op.simps(2) prod.collapse)
     then have 1: \<open>element_ids es' = element_ids es\<close>
       by (metis delete_preserve_indices element_ids_def list.set_map)
-    then have \<open>set (indices dn') = set (indices dn)\<close>
+    then have \<open>set (inserted_ids dn') = set (inserted_ids dn)\<close>
       by (metis Delete append_self_conv assms(1) check_and_apply.simps indices_Deliver_Delete indices_append prod.exhaust_sel prod.inject)
     then show ?thesis
       using 1 assms(3) by blast
@@ -171,9 +228,9 @@ qed
 lemma apply_opers_idx_elems:
   assumes \<open>apply_history (dn, G) ns = (dn', G')\<close>
       and \<open>apply_operations dn = Some es\<close>
-      and \<open>element_ids es = set (indices dn)\<close>
+      and \<open>element_ids es = set (inserted_ids dn)\<close>
       and \<open>apply_operations dn' = Some es'\<close>
-    shows \<open>element_ids es' = set (indices dn')\<close>
+    shows \<open>element_ids es' = set (inserted_ids dn')\<close>
 using assms proof(induction ns arbitrary: dn' G' es' rule:rev_induct)
   case Nil
   then show ?case by auto
@@ -185,7 +242,7 @@ next
     using dn_G''_d snoc.prems(1) by force
   obtain es'' where 2: \<open>apply_operations dn'' = Some es''\<close>
     by (metis 1 apply_operations_Some check_and_apply.simps fst_conv snoc.prems(4))
-  then have \<open>element_ids es'' = set (indices dn'')\<close>
+  then have \<open>element_ids es'' = set (inserted_ids dn'')\<close>
     using snoc(1)[of \<open>dn''\<close> \<open>G''\<close> \<open>es''\<close>] dn_G''_d snoc.prems(2) snoc.prems(3) by fastforce
   then show ?case
     using "1" 2 apply_op_idx_elems snoc.prems(4) by blast
@@ -195,7 +252,7 @@ lemma step_never_fails_with_idx_elems:
   assumes \<open>check_and_apply (dn, G) (hs, v) = (dn', G')\<close>
      and \<open>fset_of_list dn = G\<close>
      and \<open>apply_operations dn = Some es\<close>
-     and \<open>element_ids es = set (indices dn)\<close>
+     and \<open>element_ids es = set (inserted_ids dn)\<close>
    shows \<open>no_failure dn'\<close>
 proof (cases \<open>is_valid G (hs, v)\<close>)
   case True
@@ -208,7 +265,7 @@ proof (cases \<open>is_valid G (hs, v)\<close>)
     case (Insert x11 x12 x13)
     obtain h where "h = H (hs, v)"
       by blast
-    have insert_unfold: \<open>\<langle>(hs, v)\<rangle> es = insert es ((x12, h), x11, True) x13\<close>
+    have insert_unfold: \<open>\<langle>(hs, v)\<rangle> es = insert es ((x12, h), x11, False) x13\<close>
       by (simp add: Insert \<open>h = H (hs, v)\<close>)
     then show ?thesis proof (cases \<open>x13\<close>)
       case None
@@ -217,15 +274,20 @@ proof (cases \<open>is_valid G (hs, v)\<close>)
     next
       case (Some a)
       have \<open>is_sem_valid G (hs, Insert x11 x12 x13)\<close>
-        using Insert True is_valid.elims(2) by blast
+        using Insert True by force
       then have \<open>is_rga_sem_valid (\<prec>) H (fset G) (hs, Insert x11 x12 (Some a))\<close>
         using Some is_sem_valid.simps by blast
+      then have \<open>(\<exists>e \<in> (fset G).
+            H e = snd a \<and>
+            (ref_id (snd e)) = Some (fst a))
+      \<close>
+        by force
       then have \<open>\<exists>hs' v' i' ei'. 
         (hs', Insert v' i' ei') \<in> (fset G) \<and>
         H (hs', Insert v' i' ei') = snd a \<and>
         i' = (fst a)\<close>
-        by (simp split: option.splits) blast
-      then have \<open>a \<in> set (indices dn)\<close>
+        by (metis operation.exhaust option.discI option.inject ref_id.simps(1) ref_id.simps(2) snd_eqD surj_pair)
+      then have \<open>a \<in> set (inserted_ids dn)\<close>
         by (metis assms(2) fset_of_list.rep_eq idx_in_elem_inserted prod.exhaust_sel)
       then show ?thesis
         by (metis Some assms(4) element_ids_def insert_Some_None_index_not_in insert_unfold list.set_map)
@@ -236,7 +298,12 @@ proof (cases \<open>is_valid G (hs, v)\<close>)
       by (metis Delete interp.elims interpret_op.simps(2))
     have \<open>is_sem_valid G (hs, Delete x2)\<close>
       using Delete True by simp
-    then have \<open>x2 \<in> set (indices dn)\<close>
+    then have \<open>\<exists>hs' v' i' ei'.
+    (hs', Insert v' i' ei') \<in> (fset G) \<and>
+    H (hs', Insert v' i' ei') = snd x2 \<and>
+    i' = (fst x2)\<close>
+      using is_rga_sem_valid_insert_2 is_sem_valid.simps by blast
+    then have \<open>x2 \<in> set (inserted_ids dn)\<close>
       using assms(2) fset_of_list.rep_eq idx_in_elem_inserted by fastforce
     then show ?thesis
       by (metis 1 assms(4) delete_None_index_not_in element_ids_def list.set_map)
@@ -261,7 +328,7 @@ proof -
     by (meson assms(1) peer_apply_history_preserve_same_nodes)
   obtain es where 2: \<open>apply_operations dn = Some es\<close>
     using apply_operations_def assms(2) no_failure_def by auto
-  have \<open>element_ids es = set (indices dn)\<close>
+  have \<open>element_ids es = set (inserted_ids dn)\<close>
     using \<open>apply_operations dn = Some es\<close> apply_operations_def apply_opers_idx_elems assms(1) element_ids_def by force
   then show ?thesis
     using 1 2 assms(3) step_never_fails_with_idx_elems by blast
@@ -386,10 +453,10 @@ proof -
     using assms insert_commute_id by auto
   have 2: \<open>ei1 = None \<or> ei1 \<noteq> Some (i2, H y)\<close>
     using assms hb.concurrent_comm insert_commute_id by auto
-  have \<open>\<forall>ii. insert ii ((i1, H x), v1, True) ei1 
-    \<bind> (\<lambda>e. insert e ((i2, H y), v2, True) ei2) = 
-    insert ii ((i2, H y), v2, True) ei2 
-    \<bind> (\<lambda>e. insert e ((i1, H x), v1, True) ei1)\<close>
+  have \<open>\<forall>ii. insert ii ((i1, H x), v1, False) ei1 
+    \<bind> (\<lambda>e. insert e ((i2, H y), v2, False) ei2) = 
+    insert ii ((i2, H y), v2, False) ei2 
+    \<bind> (\<lambda>e. insert e ((i1, H x), v1, False) ei1)\<close>
     using insert_commutes
     by (metis "1" "2" Pair_inject assms(2) assms(3) fstI hash_no_collisions operation.inject(1) option.distinct(1))
   then show ?thesis 
@@ -408,8 +475,8 @@ lemma ins_del_commute:
 proof -
   have "snd ei2 \<noteq> H (hs1, Insert v1 i1 ei1)"
     using assms ins_del_commute_id by blast
-  then have \<open>\<forall>ii. insert ii ((i1, H x), v1, True) ei1 \<bind> (\<lambda>e. delete e ei2) = 
-    delete ii ei2 \<bind> (\<lambda>e. insert e ((i1, H x), v1, True) ei1)\<close>
+  then have \<open>\<forall>ii. insert ii ((i1, H x), v1, False) ei1 \<bind> (\<lambda>e. delete e ei2) = 
+    delete ii ei2 \<bind> (\<lambda>e. insert e ((i1, H x), v1, False) ei1)\<close>
     by (metis assms(2) fstI insert_delete_commute snd_conv)
   then show ?thesis 
     apply (clarsimp simp add: kleisli_def) 
@@ -484,8 +551,13 @@ next
         by (simp add: n_d)
     next
       case (Some a)
+      then have \<open>\<exists>hs' v' i' ei'. 
+        (hs', Insert v' i' ei') \<in> (fset G) \<and>
+        H (hs', Insert v' i' ei') = snd a \<and>
+        i' = (fst a)\<close>
+        by (metis \<open>is_sem_valid G n\<close> is_rga_sem_valid_insert_1 is_sem_valid.elims(2) n_d)
       then show ?thesis
-        using \<open>is_sem_valid G n\<close> ancestor_nodes_of_def n_d by auto
+        using Some \<open>is_sem_valid G n\<close> ancestor_nodes_of_def n_d by fastforce
     qed
   next
     case (Delete i)
@@ -517,5 +589,26 @@ qed
 thm sec.sec_convergence
 
 end
+
+definition is_rga_sem_valid_integer :: \<open>(String.literal, String.literal, integer) RGAC \<Rightarrow> (String.literal, String.literal, integer) RGAH \<Rightarrow> (String.literal, String.literal, integer) RGAN set \<Rightarrow> 
+  (String.literal, String.literal, integer) RGAN \<Rightarrow> bool\<close> where
+  \<open>is_rga_sem_valid_integer = is_rga_sem_valid\<close>
+
+definition interpret_op_integer :: \<open>(String.literal, String.literal, integer) RGAH \<Rightarrow> (String.literal, String.literal, integer) RGAN 
+  \<Rightarrow> ((String.literal, String.literal) elem_id, integer) elt list \<rightharpoonup> ((String.literal, String.literal) elem_id, integer) elt list\<close> where
+  \<open>interpret_op_integer = interpret_op\<close>
+
+definition rga_is_struct_valid :: \<open>(String.literal, String.literal, integer) RGAH \<Rightarrow> (String.literal, String.literal, integer) RGAG \<Rightarrow> (String.literal, String.literal, integer) RGAN \<Rightarrow> bool\<close> where
+  \<open>rga_is_struct_valid = is_struct_valid'\<close>
+
+type_synonym ('hash, 'val) impl_causal_func = \<open>('hash, 'val) hash_graph \<Rightarrow> ('hash, 'val) node \<Rightarrow>('hash, 'val) node \<Rightarrow> bool\<close>
+type_synonym ('id, 'hash, 'v) impl_RGAC = \<open>('hash, ('id, 'hash, 'v) operation) impl_causal_func\<close>
+
+
+definition rga_check_and_apply :: \<open>(String.literal, String.literal, integer) impl_RGAC \<Rightarrow> (String.literal, String.literal, integer) RGAH \<Rightarrow> (String.literal, (String.literal, String.literal, integer) operation) peer_state \<Rightarrow> (String.literal, (String.literal, String.literal, integer) operation) node \<Rightarrow> (String.literal, (String.literal, String.literal, integer) operation) peer_state\<close> where
+  \<open>rga_check_and_apply C H = check_and_apply' (\<lambda>G. (is_rga_sem_valid_integer (C G) H) (fset G)) (rga_is_struct_valid H)\<close>
+
+export_code rga_check_and_apply interpret_op_integer in Scala module_name BFT_RGA file "BFT_RGA.scala"
+
 
 end

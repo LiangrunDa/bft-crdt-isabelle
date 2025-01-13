@@ -52,7 +52,10 @@ fun is_orset_sem_valid :: \<open>('hash, 'a) ORSetC \<Rightarrow> ('hash, 'a) OR
 | \<open>is_orset_sem_valid C H S (hs, Rem is e) = 
     (\<forall>i \<in> is. \<exists> n \<in> S. (C n (hs, Rem is e)) \<and> (snd n = Add e) \<and> (H n = i))\<close>
 
-locale bft_orset = peers_with_arbitrary_history H _ interpret_op' \<open>\<lambda>x. {}\<close> is_orset_sem_valid for
+definition init_state :: \<open>('hash, 'a) state\<close> where
+  \<open>init_state \<equiv> \<lambda>x. {}\<close>
+
+locale bft_orset = peers_with_arbitrary_history H _ interpret_op' init_state is_orset_sem_valid for
     H :: \<open>('hash, 'a) ORSetH\<close>
 begin
 
@@ -234,11 +237,33 @@ next
 next
   fix ns dn G hs v dn' G'
   show \<open>apply_history ([], {||}) ns = (dn, G) \<Longrightarrow>
-       no_failure dn \<Longrightarrow>
-       check_and_apply (dn, G) (hs, v) = (dn', G') \<Longrightarrow> no_failure dn'\<close>
-    using step_never_fails by blast
+       peers_with_arbitrary_history.no_failure H interpret_op' (\<lambda>x. {}) dn \<Longrightarrow>
+       check_and_apply (dn, G) (hs, v) = (dn', G') \<Longrightarrow>
+       peers_with_arbitrary_history.no_failure H interpret_op' (\<lambda>x. {}) dn'\<close>
+    by (metis (no_types, lifting) ext init_state_def step_never_fails)
 qed
 
 end
+
+definition is_orset_sem_valid_nat :: \<open>(String.literal, nat) ORSetC \<Rightarrow> (String.literal, nat) ORSetH \<Rightarrow> (String.literal, nat) ORSetN set \<Rightarrow> (String.literal, nat) ORSetN \<Rightarrow> bool\<close>
+  where
+    \<open>is_orset_sem_valid_nat = is_orset_sem_valid\<close>
+
+definition op_elem_nat :: \<open>(String.literal, nat) operation \<Rightarrow> nat\<close> where
+  \<open>op_elem_nat = op_elem \<close>
+
+definition orset_interpret_op_nat :: \<open>(String.literal, nat) ORSetH  \<Rightarrow> (String.literal, nat) ORSetN \<Rightarrow> (String.literal, nat) state \<Rightarrow> (String.literal, nat) state option\<close> where
+  \<open>orset_interpret_op_nat = interpret_op'\<close>
+
+definition orset_is_struct_valid :: \<open>(String.literal, nat) ORSetH \<Rightarrow> (String.literal, nat) ORSetG \<Rightarrow> (String.literal, nat) ORSetN \<Rightarrow> bool\<close> where
+  \<open>orset_is_struct_valid = is_struct_valid'\<close>
+
+type_synonym ('hash, 'val) impl_causal_func = \<open>('hash, 'val) hash_graph \<Rightarrow> ('hash, 'val) node \<Rightarrow>('hash, 'val) node \<Rightarrow> bool\<close>
+type_synonym ('hash, 'a) impl_ORSetC = \<open>('hash, ('hash, 'a) operation) impl_causal_func\<close>
+
+definition orset_check_and_apply :: \<open>(String.literal, nat) impl_ORSetC \<Rightarrow> (String.literal, nat) ORSetH \<Rightarrow> (String.literal, (String.literal, nat) operation) peer_state \<Rightarrow> (String.literal, (String.literal, nat) operation) node \<Rightarrow> (String.literal, (String.literal, nat) operation) peer_state\<close> where
+  \<open>orset_check_and_apply C H = check_and_apply' (\<lambda>G. (is_orset_sem_valid_nat (C G) H) (fset G)) (orset_is_struct_valid H)\<close>
+
+export_code orset_interpret_op_nat orset_check_and_apply init_state in Scala module_name BFT_ORSet file "BFT_ORSet.scala"
 
 end
